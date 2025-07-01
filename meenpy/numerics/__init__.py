@@ -1,42 +1,17 @@
-from numpy import exp, dot, ones
+from sympy.parsing.sympy_parser import parse_expr
+from sympy import sympify
+from sympy import symbols
 
-class InputNeuron:
-    def __init__(self):
-        self.input = 0
-    def setOutput(self, input):
-        self.output = input
-    def getOutput(self):
-        return self.output
+class Eqn:
+    def __init__(self, eqn_str):
+        eqn_str = str(eqn_str).strip()
+        letters = [chr(i) for i in list(range(65, 91)) + list(range(97, 123))] # A-Z, a-z
+        if any(c1 in letters and c2 in letters for c1, c2 in zip(eqn_str[:-1], eqn_str[1:])):
+            raise Exception("Invalid equation input, single letter variables required")
+        lhs_str, rhs_str = eqn_str.split("=")
+        variable_dict = {letter: symbols(letter) for letter in letters}
+        self.lhs = sympify(lhs_str, variable_dict)
+        self.rhs = sympify(rhs_str, variable_dict)
 
-class Neuron:
-    def __init__(self, weights, inputNeurons):
-        self.weights = weights
-        self.inputNeurons = inputNeurons
-        self.output = 0
-    def getOutput(self):
-        return self.output
-    def stimulate(self):
-        sigmoid = lambda s : 1 / (1 + exp(-s))
-        self.output = int(sigmoid(dot(self.weights, [neuron.output for neuron in self.inputNeurons])) >= 0.5)
-
-class Net:
-    def __init__(self, shape):
-        self.neurons = []
-        for i in range(len(shape)):
-            self.neurons += []
-            for j in range(shape[i]):
-                if i == 0:
-                    self.neurons[i] += InputNeuron()
-                else:
-                    self.neurons[i] += Neuron(
-                        ones((len(self.neurons[i - 1]),)),
-                        self.neurons[i - 1]
-                    )
-    def setInputs(self, inputs):
-        for i in range(len(self.neurons[0])):
-            self.neurons[0, i].setOutput(inputs[i])
-    def eval(self):
-        for i in range(1, len(self.neurons)):
-            for j in range(len(self.neurons[i])):
-                self.neurons[i, j].stimulate()
-        return [neuron.getOutput() for neuron in self.neurons[-1]]
+    def __str__(self):
+        return self.lhs.__str__() + " = " + self.rhs.__str__()

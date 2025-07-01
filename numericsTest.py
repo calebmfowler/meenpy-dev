@@ -1,4 +1,5 @@
-from meenpy.numerics import Net
+from meenpy.numerics import Eqn
 
-myNet = Net([2, 3, 1])
+eqn = Eqn("y = m*x + b")
+print(eqn)
 
