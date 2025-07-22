@@ -1,5 +1,6 @@
 from meenpy.numerics import Equation as E, System as S
-from meenpy.numerics.utils import *
+# from meenpy.numerics.utils import *
+from sympy import symbols as symb, sin, cos, pi
 
 y, m, x, b = symb("y, m, x, b")
 line = E(y, m * x + b)
@@ -17,7 +18,7 @@ print(line.solve({
     b: -1
 }))
 
-'''sinusoid = E(y, sin(pi * x))
+sinusoid = E(y, sin(pi * x))
 system = S([line, sinusoid])
 
 print(system)
@@ -28,5 +29,5 @@ print(system.solve({
     b: -1
 }, {
     x: 0
-}))'''
+}))
 

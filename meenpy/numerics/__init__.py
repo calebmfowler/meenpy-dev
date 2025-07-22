@@ -4,9 +4,9 @@ from sympy.solvers.solvers import solve as sympy_solve
 from numpy import array as nparr
 
 class Equation:
-    def __init__(self, lhs: Basic, rhs: Basic):
-        self.lhs = lhs
-        self.rhs = rhs
+    def __init__(self, lhs, rhs):
+        self.lhs: Basic = sympify(lhs)
+        self.rhs: Basic = sympify(rhs)
         self.symbols = self.lhs.free_symbols | self.rhs.free_symbols
 
         return
@@ -38,11 +38,14 @@ class System:
     def __str__(self):
         return '| ' + '\n| '.join([eqn.__str__() for eqn in self.eqn_list])
     
-    def residual(self, subs):
-        return [eqn.residual(subs) for eqn in self.eqn_list]
+    def residual(self, subs, types: list[str] = []):
+        if types == []:
+            types = ['differential'] * len(self.eqn_list)
+        
+        return [eqn.residual(subs, type) for eqn, type in zip(self.eqn_list, types)]
     
-    def solve(self, subs: dict, guess_dict: dict = {}):
-        subbed_residual: list[Expr] = self.residual(subs)
+    def solve(self, subs, guess_dict: dict = {}):
+        subbed_residual: list[Basic] = self.residual(subs)
         unknowns = list(set().union(*[element.free_symbols for element in subbed_residual]))
         eqn_cnt, unknown_cnt = len(subbed_residual), len(unknowns)
 
@@ -57,12 +60,9 @@ class System:
             if guess_dict != {}:
                 guess_vect = [guess_dict.get(variable) for variable in unknowns]
 
-            unknown_subs = lambda solution : {unknown : element for unknown, element in zip(unknowns, solution)}
-            solution_residual = lambda solution : [element.subs(unknown_subs(solution)) for element in subbed_residual]
-            print(type(solution_residual))
-            print(solution_residual)
-            print(type(guess_vect))
-            print(guess_vect)
+            unknown_subs = lambda solution: {unknown: solution_element for unknown, solution_element in zip(unknowns, solution)}
+            solution_residual = lambda solution: [subbed_residual_element.subs(unknown_subs(solution)) for subbed_residual_element in subbed_residual][0 : unknown_cnt]
+
             solution = fsolve(solution_residual, guess_vect)
 
             return '\n'.join([f'{unknown} = {value}' for unknown, value in zip(unknowns, solution)])
