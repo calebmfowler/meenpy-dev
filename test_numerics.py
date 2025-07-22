@@ -1,30 +1,32 @@
 from meenpy.numerics import Equation as E, System as S
+from meenpy.numerics.utils import *
 
-eqn1 = E("y = m*x + b")
+y, m, x, b = symb("y, m, x, b")
+line = E(y, m * x + b)
 
-print(eqn1)
-print(eqn1.residual({
-    "y": 1,
-    "m": 1,
-    "x": 1,
-    "b": 0
+print(line)
+print(line.residual({
+    y: 1,
+    m: 1,
+    x: 1,
+    b: 0
 }))
-print(eqn1.solve({
-    "m": 1,
-    "x": 1,
-    "b": -1
+print(line.solve({
+    y: 0,
+    m: 1,
+    b: -1
 }))
 
-eqn2 = E("y = n*x")
-system = S([eqn1, eqn2])
+sinusoid = E(y, sin(pi * x))
+system = S([line, sinusoid])
 
 print(system)
-print(system.variables)
+print(system.symbols)
 print(system.solve({
-    "m": 1,
-    "n": -1,
-    "b": -2
+    y: 0,
+    m: 1,
+    b: -1
 }, {
-    "y": 1,
-    "x": 1
+    x: 0
 }))
+

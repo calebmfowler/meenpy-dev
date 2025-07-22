@@ -1,3 +1,4 @@
+from meenpy.numerics import Equation as E, System as S
 from meenpy.mechanics import Force, FBD
 from numpy import array
 
@@ -20,3 +21,4 @@ testFBD = FBD([testForce], [testReaction1, testReaction2])
 print(testFBD)
 
 testFBD.solveReactions()
+
