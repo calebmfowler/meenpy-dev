@@ -1,7 +1,8 @@
 from scipy.optimize import fsolve
 from sympy import sympify, Expr, Basic
 from sympy.solvers.solvers import solve as sympy_solve
-from numpy import array as nparr
+from numpy import array as nparr, concatenate
+from collections.abc import Iterable
 
 class Equation:
     def __init__(self, lhs, rhs):
@@ -60,8 +61,18 @@ class System:
             if guess_dict != {}:
                 guess_vect = [guess_dict.get(variable) for variable in unknowns]
 
-            unknown_subs = lambda solution: {unknown: solution_element for unknown, solution_element in zip(unknowns, solution)}
-            solution_residual = lambda solution: [subbed_residual_element.subs(unknown_subs(solution)) for subbed_residual_element in subbed_residual][0 : unknown_cnt]
+            unknown_subs = lambda solution: dict(zip(unknowns, solution))
+
+            def solution_residual(solution):
+                residual = []
+                for subbed_residual_element in subbed_residual:
+                    residual_element = subbed_residual_element.subs(unknown_subs(solution))
+                    if isinstance(residual_element, Iterable):
+                        residual.append(residual_element)
+                    else:
+                        residual.append([residual_element])
+                
+                return [element for subresidual in residual for element in subresidual][0 : unknown_cnt]
 
             solution = fsolve(solution_residual, guess_vect)
 
