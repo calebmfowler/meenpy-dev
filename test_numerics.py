@@ -17,7 +17,7 @@ print(line.solve({
     b: -1
 }))
 
-sinusoid = E(y, sin(pi * x))
+'''sinusoid = E(y, sin(pi * x))
 system = S([line, sinusoid])
 
 print(system)
@@ -28,5 +28,5 @@ print(system.solve({
     b: -1
 }, {
     x: 0
-}))
+}))'''
 

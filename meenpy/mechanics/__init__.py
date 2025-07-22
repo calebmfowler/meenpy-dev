@@ -3,7 +3,7 @@ class Force:
         self.force = forceVector
         self.point = applicationPoint
     def __str__(self):
-        return f"{self.force} applied at {self.point}"
+        return f'{self.force} applied at {self.point}'
     
     def getForceVector(self):
         return self.force
@@ -15,12 +15,12 @@ class FBD:
         self.forceSet = appliedForceSet
         self.reactionSet = reactionForceSet
     def __str__(self):
-        str = "Applied Forces\n"
+        str = 'Applied Forces\n'
         for force in self.forceSet:
-            str += force.__str__() + "\n"
-        str += "Reaction Force Basis\n"
+            str += force.__str__() + '\n'
+        str += 'Reaction Force Basis\n'
         for reaction in self.reactionSet:
-            str += reaction.__str__() + "\n"
+            str += reaction.__str__() + '\n'
         return str[:-1]
     
     def addForces(self, appliedForceSet):
@@ -38,5 +38,5 @@ class FBD:
             for component in reaction.getForceVector():
                 dofCount += abs(component) >= 1e-6
         if dofCount > 6:
-            raise Exception("FBD is not in Static Equilibrium")
-        return "Not Finished Developing"
+            raise Exception('FBD is not in Static Equilibrium')
+        return 'Not Finished Developing'
