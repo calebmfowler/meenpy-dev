@@ -59,26 +59,30 @@ class ScalarEquation(Equation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
     
     def lambda_residual(self, subs: dict[Basic, usernum], residual_type: str = "differential") -> tuple[Callable[[ndarray], usernum], list[Basic]]:
-        print("ScalarEquation lambda_residual()")
         residual = self.residual(subs, residual_type)
         residual_free_symbols_list = list(residual.free_symbols)
-        lambda_residual_func: Callable[[ndarray], usernum] = lambdify(residual_free_symbols_list, residual)
+        lambda_residual_func: Callable[[tuple], usernum] = lambdify(residual_free_symbols_list, residual)
 
-        print(signature(lambda_residual_func))
-        return lambda_residual_func, residual_free_symbols_list
+        def unpack_wrapper(func: Callable[[tuple], usernum]):
+            return lambda arr: func(*arr)
+
+        return unpack_wrapper(lambda_residual_func), residual_free_symbols_list
         
     def solve(self, subs: dict[Basic, usernum], residual_type: str = "differential", guess: usernum = 1) -> dict[Basic, npfloat]:
         residual_lambda, residual_free_symbols_list = self.lambda_residual(subs, residual_type)
 
         exception_output = f"\
-                ScalarEquation: {self}\n\
-                subs = {subs}\n\
-                residual_free_symbols_list = {residual_free_symbols_list}"
+                ScalarEquation:\n    {self.__str__().replace('\n', '\n    ')}\n\
+                subs:\n    {subs.__str__().replace('\n', '\n    ')}\n\
+                residual_free_symbols_list:\n    {residual_free_symbols_list.__str__().replace('\n', '\n    ')}"
 
         if len(residual_free_symbols_list) != 1:
             raise ValueError(f"Insufficient subs to solve scalar equation\n{exception_output}")
         
-        solution = fsolve(residual_lambda, guess)
+        try:
+            solution = fsolve(residual_lambda, guess)
+        except Exception as e:
+            raise Exception(f"{e}\nUnable to solve ScalarEquation\n{exception_output}")
 
         return {residual_free_symbols_list[0] : npfloat(solution[0])}
 
@@ -103,9 +107,6 @@ class MatrixEquation(Equation):
         if lhs_rows == 0 or lhs_cols == 0 or rhs_rows == 0 or rhs_cols == 0:
             raise ValueError(f"Given expression shapes include a zero width dimension\n{exception_output}")
         
-        if lhs_rows == 1 and lhs_cols == 1 or rhs_rows == 1 and rhs_cols == 1:
-            raise ValueError(f"Given expression is matrix of shape (1, 1)\n{exception_output}")
-        
         if self.lhs.shape != self.rhs.shape:
             raise ValueError(f"Given matrices have unequal shapes\n{exception_output}")
         
@@ -122,16 +123,14 @@ class MatrixEquation(Equation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
 
     def lambda_residual(self, subs: dict[Basic, usernum], residual_type: str = "differential") -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
-        print("MatrixEquation lambda_residual()")
         residual = self.residual(subs, residual_type)
         residual_free_symbols_list: list[Basic] = list(residual.free_symbols)
-        shaped_lambda_residual_func: Callable[[tuple], Matrix | ndarray] = lambdify(residual_free_symbols_list, residual)
+        shaped_lambda_residual_func: Callable[[tuple], ndarray] = lambdify(residual_free_symbols_list, residual)
 
-        def nparr_ravel_wrapper(func: Callable[[tuple], Matrix | ndarray]) -> Callable[[ndarray], ndarray]:
-            return lambda *args: nparr(func(*args)).ravel()
+        def unpack_ravel_wrapper(func: Callable[[tuple], ndarray]) -> Callable[[ndarray], ndarray]:
+            return lambda args: nparr(func(*args)).ravel()
 
-        print(signature(nparr_ravel_wrapper(shaped_lambda_residual_func)))
-        return nparr_ravel_wrapper(shaped_lambda_residual_func), residual_free_symbols_list
+        return unpack_ravel_wrapper(shaped_lambda_residual_func), residual_free_symbols_list
 
     def solve(self, subs: dict[Basic, usernum], residual_type: str = "differential", guess_dict: dict[Basic, usernum] = {}) -> dict[Basic, npfloat]:
         lambda_residual_func, residual_free_symbols_list = self.lambda_residual(subs, residual_type)
@@ -146,7 +145,10 @@ class MatrixEquation(Equation):
         
         guess_vect = [guess_dict.get(free_symbol) if free_symbol in guess_dict.keys() else 1 for free_symbol in residual_free_symbols_list]
         
-        solution = nparr(fsolve(lambda_residual_func, guess_vect), dtype=npfloat)
+        try:
+            solution = nparr(fsolve(lambda_residual_func, guess_vect), dtype=npfloat)
+        except Exception as e:
+            raise Exception(f"{e}\nUnable to solve MatrixEquation\n{exception_output}")
 
         return dict(zip(residual_free_symbols_list, solution))
 
@@ -181,15 +183,13 @@ class System:
         farg_list = [lambda_residual[1] for lambda_residual in lambda_residual_list]
         arg_list: list[Basic] = list(set().union(*[fargs for fargs in farg_list]))
         arg_index_map = {arg: i for i, arg in enumerate(arg_list)}
-        print(arg_index_map)
-        farg_indices = {tuple(farg): [arg_index_map[arg] for arg in farg] for farg in farg_list}
-        print(farg_indices)
+        farg_indices_list = [[arg_index_map[arg] for arg in farg] for farg in farg_list]
 
         def concatenate_wrapper(func_list: list[Callable[[ndarray], usernum | ndarray]], farg_list: list[list[Basic]]) -> Callable[[ndarray], ndarray]:
             return lambda args: concatenate([
-                func(*args[farg_indices[tuple(fargs)]]) if get_type_hints(func).get('return') == ndarray\
-                else nparr([func(*args[farg_indices[tuple(fargs)]])]).ravel()\
-                for func, fargs in zip(func_list, farg_list)
+                func(args[farg_indices_list]) if get_type_hints(func).get('return') == ndarray\
+                else nparr([func(args[farg_indices_list])]).ravel()\
+                for func, farg_indices_list in zip(func_list, farg_indices_list)
             ])
 
         return concatenate_wrapper(func_list, farg_list), arg_list

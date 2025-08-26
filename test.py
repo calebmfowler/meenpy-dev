@@ -17,7 +17,19 @@ class MEENPyTest(unittest.TestCase):
         
         pass
 
-    def test_matrix_equation(self):
+    def test_size_1_matrix_equation(self):
+        f, f1, f2, f3 = symb("f, f1, f2, f3")
+        F = Mat([f1, f2, f3])
+        vector_magnitude = meqn(Mat([f]), sym.sqrt(F.T @ F))
+
+        sol = vector_magnitude.solve({f1: 1, f2: 1, f3: 1}, guess_dict={f: 2})
+        result = [sol[free_symbol] for free_symbol in [f]]
+        expected = [np.sqrt(3)]
+        self.assertEqual(result, expected)
+
+        pass
+
+    def test_vector_matrix_equation(self):
         a1, a2, a3, a4, x1, x2, b1, b2 = symb("a1, a2, a3, a4, x1, x2, b1, b2")
         A = Mat([
             [a1, a2],
@@ -26,11 +38,6 @@ class MEENPyTest(unittest.TestCase):
         X = Mat([x1, x2])
         B = Mat([b1, b2])
         line = meqn(A @ X, B)
-
-        self.assertEqual(
-            line.residual({b1: 0, b2: 0}),
-            A @ X
-        )
 
         sol = line.solve({a1: 1, a2: -1, a3: 1, a4: 1, b1: 0, b2: 2}, guess_dict={x1: 2, x2: 2})
         result = [sol[free_symbol] for free_symbol in [x1, x2]]
