@@ -12,7 +12,7 @@ class MEENPyTest(unittest.TestCase):
             y
         )
 
-        sol = line.solve({y: 0, m: 1, b: -1}, residual_type='differential', guess=2)
+        sol = line.solve({y: 0, m: 1, b: -1}, guess=2)
         self.assertEqual(sol, dict({x: 1}))
         
         pass
