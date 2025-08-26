@@ -1,103 +1,219 @@
 from scipy.optimize import fsolve
-from sympy import sympify, lambdify, Basic, Number, Float, Matrix
+from sympy import sympify, lambdify, Basic, Number, Expr, Matrix
 from sympy.solvers.solvers import solve as sympy_solve
-from numpy import array as nparr, ndarray, float64 as npfloat, concatenate
+from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, typing as npt, prod, sum
 from collections.abc import Iterable
-from inspect import signature 
+from inspect import signature
+from typing import Callable, Self, get_type_hints
+
+usernum = int | float | npfloat
+enpyexpr = Expr | usernum
 
 class Equation:
     def __init__(self, lhs, rhs) -> None:
-        self.lhs: Basic = sympify(lhs)
-        self.rhs: Basic = sympify(rhs)
-        self.symbols = self.lhs.free_symbols | self.rhs.free_symbols
+        self.init_lhs_rhs(lhs, rhs)
+        self.init_shape_size()
+        self.init_free_symbols()
+    
+    def init_lhs_rhs(self, lhs, rhs) -> None:
+        self.lhs = sympify(lhs)
+        self.rhs = sympify(rhs)
+    
+    def init_shape_size(self) -> None:
+        self.shape: tuple[int, int] = (-1, -1)
+        self.size: int = -1
+    
+    def init_free_symbols(self) -> None:
+        self.free_symbols: set[Basic] = set()
 
-        return
+    def residual(self, subs: dict[Basic, usernum], residual_type: str = "differential") -> Expr | Matrix:
+        return Expr()
+    
+    def lambda_residual(self, subs: dict[Basic, usernum], residual_type: str = "differential") -> tuple[Callable, list[Basic]]:
+        return (lambda *args, **kwargs: None, [])
+    
+    def solve(self, subs: dict[Basic, usernum], residual_type: str = "differential") -> dict[Basic, npfloat]:
+        return {}
 
     def __str__(self) -> str:
         return self.lhs.__str__() + ' = ' + self.rhs.__str__()
-    
-    def residual(self, subs: dict, numerical: bool = False, type: str = 'differential') -> Basic:
-        if not numerical and type == 'differential':
-            return sympify(self.lhs.subs(subs)) - sympify(self.rhs.subs(subs))
-        elif not numerical and type == 'rational':
-            return sympify(self.lhs.subs(subs)) / sympify(self.rhs.subs(subs)) - 1 # Gonna need to branch for matrix values Eqns to invert & subtract identity
-        elif numerical:
-            symbolic_residual = self.residual(subs, type=type)
 
-            if isinstance(symbolic_residual, Number):
-                return Float(self.residual(subs, type=type))
-            else:
-                raise ValueError(f'Insufficient subs for numerical residual evaluation\nEquation =\n{self.__str__()}\nsubs =\n{subs}')
-        else:
-            raise ValueError(f'Invalid residual type "{type}"')
+
+class ScalarEquation(Equation):
+    def init_lhs_rhs(self, lhs, rhs) -> None:
+        self.lhs: Expr = sympify(lhs)
+        self.rhs: Expr = sympify(rhs)
+
+    def init_shape_size(self) -> None:
+        self.shape: tuple[int, int] = (1, 1)
+        self.size = 1
     
-    def solve(self, subs: dict, residual_type: str = 'differential'):
-        subbed_residual = self.residual(subs, numerical=False, type=residual_type)
+    def init_free_symbols(self) -> None:
+        self.free_symbols: set[Basic] = self.lhs.free_symbols | self.rhs.free_symbols
+    
+    def residual(self, subs: dict[Basic, usernum], residual_type: str = "differential") -> Expr:
+        if residual_type == "differential":
+            return sympify(self.lhs.subs(subs)) - sympify(self.rhs.subs(subs))
+        elif residual_type == "left_rational":
+            return sympify(self.lhs.subs(subs)) / sympify(self.rhs.subs(subs)) - 1
+        elif residual_type == "right_rational":
+            return sympify(self.rhs.subs(subs)) / sympify(self.lhs.subs(subs)) - 1
+        else:
+            raise ValueError(f"Invalid residual_type = '{residual_type}'")
+    
+    def lambda_residual(self, subs: dict[Basic, usernum], residual_type: str = "differential") -> tuple[Callable[[ndarray], usernum], list[Basic]]:
+        print("ScalarEquation lambda_residual()")
+        residual = self.residual(subs, residual_type)
+        residual_free_symbols_list = list(residual.free_symbols)
+        lambda_residual_func: Callable[[ndarray], usernum] = lambdify(residual_free_symbols_list, residual)
+
+        print(signature(lambda_residual_func))
+        return lambda_residual_func, residual_free_symbols_list
         
-        return sympy_solve(subbed_residual)
+    def solve(self, subs: dict[Basic, usernum], residual_type: str = "differential", guess: usernum = 1) -> dict[Basic, npfloat]:
+        residual_lambda, residual_free_symbols_list = self.lambda_residual(subs, residual_type)
+
+        exception_output = f"\
+                ScalarEquation: {self}\n\
+                subs = {subs}\n\
+                residual_free_symbols_list = {residual_free_symbols_list}"
+
+        if len(residual_free_symbols_list) != 1:
+            raise ValueError(f"Insufficient subs to solve scalar equation\n{exception_output}")
+        
+        solution = fsolve(residual_lambda, guess)
+
+        return {residual_free_symbols_list[0] : npfloat(solution[0])}
+
+
+class MatrixEquation(Equation):
+    def init_lhs_rhs(self, lhs, rhs) -> None:
+        self.lhs: Matrix = sympify(lhs)
+        self.rhs: Matrix = sympify(rhs)
+    
+    def init_shape_size(self) -> None:
+        lhs_shape: tuple[int, int] = self.lhs.shape
+        rhs_shape: tuple[int, int] = self.rhs.shape
+        lhs_rows, lhs_cols = lhs_shape
+        rhs_rows, rhs_cols = rhs_shape
+
+        exception_output = f"\
+                lhs:\n    {str(self.lhs.__str__()).replace('\n', '\n    ')}\n\
+                rhs:\n    {str(self.rhs.__str__()).replace('\n', '\n    ')}\n\
+                lhs.shape: {self.lhs.shape}\n\
+                rhs.shape: {self.rhs.shape}"
+
+        if lhs_rows == 0 or lhs_cols == 0 or rhs_rows == 0 or rhs_cols == 0:
+            raise ValueError(f"Given expression shapes include a zero width dimension\n{exception_output}")
+        
+        if lhs_rows == 1 and lhs_cols == 1 or rhs_rows == 1 and rhs_cols == 1:
+            raise ValueError(f"Given expression is matrix of shape (1, 1)\n{exception_output}")
+        
+        if self.lhs.shape != self.rhs.shape:
+            raise ValueError(f"Given matrices have unequal shapes\n{exception_output}")
+        
+        self.shape: tuple[int, int] = self.lhs.shape
+        self.size: int = int(prod(self.shape))
+
+    def init_free_symbols(self) -> None:
+        self.free_symbols: set[Basic] = self.lhs.free_symbols | self.rhs.free_symbols
+
+    def residual(self, subs: dict[Basic, usernum], residual_type: str = "differential") -> Matrix:
+        if residual_type == "differential":
+            return sympify(self.lhs.subs(subs)) - sympify(self.rhs.subs(subs))
+        else:
+            raise ValueError(f"Invalid residual_type = '{residual_type}'")
+
+    def lambda_residual(self, subs: dict[Basic, usernum], residual_type: str = "differential") -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
+        print("MatrixEquation lambda_residual()")
+        residual = self.residual(subs, residual_type)
+        residual_free_symbols_list: list[Basic] = list(residual.free_symbols)
+        shaped_lambda_residual_func: Callable[[tuple], Matrix | ndarray] = lambdify(residual_free_symbols_list, residual)
+
+        def nparr_ravel_wrapper(func: Callable[[tuple], Matrix | ndarray]) -> Callable[[ndarray], ndarray]:
+            return lambda *args: nparr(func(*args)).ravel()
+
+        print(signature(nparr_ravel_wrapper(shaped_lambda_residual_func)))
+        return nparr_ravel_wrapper(shaped_lambda_residual_func), residual_free_symbols_list
+
+    def solve(self, subs: dict[Basic, usernum], residual_type: str = "differential", guess_dict: dict[Basic, usernum] = {}) -> dict[Basic, npfloat]:
+        lambda_residual_func, residual_free_symbols_list = self.lambda_residual(subs, residual_type)
+
+        exception_output = f"\
+                MatrixEquation:\n    {self.__str__().replace('\n', '\n    ')}\n\
+                subs:\n    {subs.__str__().replace('\n', '\n    ')}\n\
+                residual_free_symbols_list:\n    {residual_free_symbols_list.__str__().replace('\n', '\n    ')}"
+
+        if len(residual_free_symbols_list) > self.size:
+            raise ValueError(f"Insufficient subs to solve matrix equation\n{exception_output}")
+        
+        guess_vect = [guess_dict.get(free_symbol) if free_symbol in guess_dict.keys() else 1 for free_symbol in residual_free_symbols_list]
+        
+        solution = nparr(fsolve(lambda_residual_func, guess_vect), dtype=npfloat)
+
+        return dict(zip(residual_free_symbols_list, solution))
 
 
 class System:
     def __init__(self, eqn_list: list[Equation]) -> None:
         self.eqn_list = eqn_list
-        self.symbols = set().union(*[eqn.symbols for eqn in self.eqn_list])
-        
-        return
+        self.free_symbols = set().union(*[eqn.free_symbols for eqn in self.eqn_list])
+        self.size = sum([eqn.size for eqn in self.eqn_list])
     
     def __str__(self) -> str:
-        return '| ' + '\n| '.join([eqn.__str__() for eqn in self.eqn_list])
+        return "| " + "\n| ".join([eqn.__str__().replace('\n', '\n| ') for eqn in self.eqn_list])
     
-    def residual(self, subs: dict, numerical: bool = False, types: list[str] = []) -> list[Basic]:
-        if types == []:
-            types = ['differential'] * len(self.eqn_list)
-        
-        residual = []
-        for eqn, type in zip(self.eqn_list, types):
-            try:
-                eqn_residual = eqn.residual(subs, numerical=numerical, type=type)
-            except ValueError as eqn_exception:
-                raise ValueError(f'Failure to calculate system residual\nSystemt =\n{self.__str__()}\n{eqn_exception.__str__()}')
-            
-            residual.append(eqn_residual)
-
-        return residual
-    
-    def solve(self, subs: dict, guess_dict: dict = {}, residual_types: list[str] = []): # -> dict[Basic, npfloat]
-        subbed_residual: list[Basic] = self.residual(subs, types=residual_types)
-        eqn_unknown_sets: list[list[Basic]] = [list(element.free_symbols) for element in subbed_residual]
-        eqn_dims = [len(subbed_eqn) if isinstance(subbed_eqn, Matrix) else 1 for subbed_eqn in subbed_residual]
-
-        func_residual = [lambdify(eqn_unknowns, subbed_eqn) for eqn_unknowns, subbed_eqn in zip(eqn_unknown_sets, subbed_residual)]
-        
-'''
-        guess_vect = [0] * unknown_cnt
-        if guess_dict != {}:
-            guess_vect = [guess_dict.get(variable) for variable in unknowns]
-
-        unknown_subs = lambda solution: dict(zip(unknowns, solution))
-        def solution_residual_func(solution):
-            return [element.subs(unknown_subs(solution)) for element in subbed_residual][0 : unknown_cnt]
-
-        fsolve_result = fsolve(solution_residual_func, guess_vect)
-        print(f'fsolve_result\n{fsolve_result}\n')
-        solution_vect = nparr(fsolve_result, dtype=npfloat)
-        print(f'solution_vect\n{solution_vect}\n')
-        solution_dict = dict(zip(unknowns, solution_vect))
-        print(f'solution_dict\n{solution_dict}\n')
-        return solution_dict
-    '''
-'''
-        if eqn_cnt > unknown_cnt + 1:
-            raise ValueError('Cannot solve, system is overspecified (eqn_cnt > unknown_cnt)')
-        elif eqn_cnt < unknown_cnt + 1:
-            raise ValueError('Cannot solve, system is underspecified (eqn_cnt < unknown_cnt)')
+    def add_eqn(self, eqn: Equation) -> None:
+        if eqn not in self.eqn_list:
+            self.eqn_list.append(eqn)
         else:
-'''
-'''
-            if isinstance(eqn_residual, Iterable):
-                residual.append(eqn_residual)
-            else:
-                residual.append([eqn_residual])
+            raise ValueError(f"Equation to be added is already in the System\nEquation: {eqn}")
 
-        return [element for subresidual in residual for element in subresidual]
-'''
+    def remove_eqn(self, eqn: Equation) -> None:
+        if eqn in self.eqn_list:
+            self.eqn_list.remove(eqn)
+        else:
+            raise ValueError(f"Equation to be removed is not in System\nEquation: {eqn}")
+    
+    def lambda_residual(self, subs: dict[Basic, usernum], residual_types: list[str] = []) -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
+        if residual_types == []:
+            residual_types = ["differential"] * len(self.eqn_list)
+
+        lambda_residual_list: list[tuple[Callable[[ndarray], usernum | ndarray], list[Basic]]] = [eqn.lambda_residual(subs, residual_type) for eqn, residual_type in zip(self.eqn_list, residual_types)]
+        func_list = [lambda_residual[0] for lambda_residual in lambda_residual_list]
+        farg_list = [lambda_residual[1] for lambda_residual in lambda_residual_list]
+        arg_list: list[Basic] = list(set().union(*[fargs for fargs in farg_list]))
+        arg_index_map = {arg: i for i, arg in enumerate(arg_list)}
+        print(arg_index_map)
+        farg_indices = {tuple(farg): [arg_index_map[arg] for arg in farg] for farg in farg_list}
+        print(farg_indices)
+
+        def concatenate_wrapper(func_list: list[Callable[[ndarray], usernum | ndarray]], farg_list: list[list[Basic]]) -> Callable[[ndarray], ndarray]:
+            return lambda args: concatenate([
+                func(*args[farg_indices[tuple(fargs)]]) if get_type_hints(func).get('return') == ndarray\
+                else nparr([func(*args[farg_indices[tuple(fargs)]])]).ravel()\
+                for func, fargs in zip(func_list, farg_list)
+            ])
+
+        return concatenate_wrapper(func_list, farg_list), arg_list
+
+    def solve(self, subs: dict[Basic, usernum], residual_types: list[str] = [], guess_dict: dict[Basic, usernum] = {})-> dict[Basic, npfloat]:
+        if residual_types == []:
+            residual_types = ["differential"] * len(self.eqn_list)
+
+        lambda_residual_func, residual_free_symbols_list = self.lambda_residual(subs, residual_types)
+    
+        exception_output = f"\
+                System:\n    {self.__str__().replace('\n', '    ')}\n\
+                subs:\n    {subs.__str__().replace('\n', '    ')}\n\
+                residual_free_symbols_list:\n    {residual_free_symbols_list.__str__().replace('\n', '    ')}"
+
+        if len(residual_free_symbols_list) > self.size:
+            raise ValueError(f"Insufficient subs to solve matrix equation\n{exception_output}")
+        
+        guess_vect = [guess_dict.get(free_symbol) if free_symbol in guess_dict.keys() else 1 for free_symbol in residual_free_symbols_list]
+               
+        solution = nparr(fsolve(lambda_residual_func, guess_vect), dtype=npfloat)
+
+        return dict(zip(residual_free_symbols_list, solution))        
+
