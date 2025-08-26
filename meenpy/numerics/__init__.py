@@ -1,13 +1,10 @@
 from scipy.optimize import fsolve
-from sympy import sympify, lambdify, Basic, Number, Expr, Matrix
-from sympy.solvers.solvers import solve as sympy_solve
-from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, typing as npt, prod, sum
-from collections.abc import Iterable
+from sympy import sympify, lambdify, Basic, Expr, Matrix
+from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum
 from inspect import signature
-from typing import Callable, Self, get_type_hints
+from typing import Callable, get_type_hints
 
 usernum = int | float | npfloat
-enpyexpr = Expr | usernum
 
 class Equation:
     def __init__(self, lhs, rhs) -> None:

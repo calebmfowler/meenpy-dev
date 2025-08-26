@@ -1,8 +1,6 @@
 import unittest
-from meenpy.numerics import ScalarEquation as seqn, MatrixEquation as meqn, System as Sys
+from meenpy.numerics import ScalarEquation as seqn, MatrixEquation as meqn, System as sys
 from meenpy.numerics.utils import *
-import numpy as np
-
 
 class MEENPyTest(unittest.TestCase):
     def test_scalar_equation(self):
@@ -46,9 +44,9 @@ class MEENPyTest(unittest.TestCase):
         F = Mat([f1, f2, f3])
         A = Mat([a1, a2, a3])
         newtons_second_law = meqn(F, m * A)
-        force_magnitude = seqn(f, sqrt(f1**2 + f2**2 + f3**2))
+        force_magnitude = seqn(f, sym.sqrt(f1**2 + f2**2 + f3**2))
 
-        mechanical_system = Sys([newtons_second_law, force_magnitude])
+        mechanical_system = sys([newtons_second_law, force_magnitude])
 
         sol = mechanical_system.solve({a1: 1, a2: 1, a3: 1, m: 1}, guess_dict={f: 2, f1: 2, f2: 2, f3: 2})
         result = [sol[free_symbol] for free_symbol in [f, f1, f2, f3]]
