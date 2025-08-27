@@ -1,7 +1,7 @@
 from scipy.optimize import fsolve
 from sympy import sympify, lambdify, Basic, Expr, Matrix
 from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum
-from typing import Callable, get_type_hints
+from typing import Callable, Any, Self, get_type_hints
 
 usernum = int | float | npfloat
 
@@ -11,7 +11,7 @@ class Equation:
         self.init_shape_size()
         self.init_free_symbols()
         self.init_residual_type(residual_type)
-    
+       
     def init_lhs_rhs(self, lhs, rhs) -> None:
         self.lhs = sympify(lhs)
         self.rhs = sympify(rhs)
@@ -26,21 +26,46 @@ class Equation:
     def init_residual_type(self, residual_type):
         self.residual_type = residual_type
 
-    def copy(self, subs: dict[Basic, usernum] = {}) -> "Equation":
-        return Equation(self.lhs, self.rhs)
-
-    def residual(self, subs: dict[Basic, usernum] = {}) -> Expr | Matrix:
+    def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr | Matrix:
         return Expr()
     
-    def lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable, list[Basic]]:
+    def get_lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable, list[Basic]]:
         return (lambda *args, **kwargs: None, [])
     
     def solve(self, subs: dict[Basic, usernum]) -> dict[Basic, npfloat]:
         return {}
+    
+    def __getattr__(self, name) -> Callable | tuple:
+        lhs_attr, rhs_attr = getattr(self.lhs, name), getattr(self.rhs, name)
+            
+        if callable(lhs_attr) and callable(rhs_attr):
+            def method(*args, **kwargs):
+                lhs_val, rhs_val = lhs_attr(*args, **kwargs), rhs_attr(*args, **kwargs)
+
+                if issubclass(type(lhs_val), type(self.lhs)) and issubclass(type(rhs_val),  type(self.rhs)):
+                    return self.__class__(lhs_val, rhs_val)
+                
+                else:
+                    return (lhs_val, rhs_val)
+                
+            return method
+
+        else:
+            return (lhs_attr, rhs_attr)
+
+    def subs(self, *args, **kwargs) -> Self:
+        func = self.__getattr__("subs")
+        if callable(func):
+            return func(*args, **kwargs)
+        else:
+            raise Exception("Error")
+    def diff(self, func, differentiation, **kwargs) -> Self: ...
+    def integrate(self, func, integration, **kwargs) -> Self: ...
+    def evalf(self, n: int = 15, subs: dict[Basic, usernum] = {}, maxn: int = 100, chop: bool = False,\
+            strict: bool = False, quad: str | None = None, verbose: bool = False) -> npfloat: ...
 
     def __str__(self) -> str:
         return self.lhs.__str__() + ' = ' + self.rhs.__str__()
-
 
 class ScalarEquation(Equation):
     def init_lhs_rhs(self, lhs, rhs) -> None:
@@ -59,10 +84,7 @@ class ScalarEquation(Equation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
         self.residual_type = residual_type
     
-    def copy(self, subs: dict[Basic, usernum] = {}) -> "ScalarEquation":
-        return ScalarEquation(self.lhs.subs(subs), self.rhs.subs(subs))
-
-    def residual(self, subs: dict[Basic, usernum] = {}) -> Expr:
+    def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr:
         if self.residual_type == "differential":
             return sympify(self.lhs.subs(subs)) - sympify(self.rhs.subs(subs))
         elif self.residual_type == "left_rational":
@@ -72,8 +94,8 @@ class ScalarEquation(Equation):
         else:
             raise ValueError(f"Invalid residual_type = '{self.residual_type}'")
     
-    def lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable[[ndarray], usernum], list[Basic]]:
-        residual = self.residual(subs)
+    def get_lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable[[ndarray], usernum], list[Basic]]:
+        residual = self.get_residual(subs)
         residual_free_symbols_list = list(residual.free_symbols)
         lambda_residual_func: Callable[[tuple], usernum] = lambdify(residual_free_symbols_list, residual)
 
@@ -83,7 +105,7 @@ class ScalarEquation(Equation):
         return unpack_wrapper(lambda_residual_func), residual_free_symbols_list
         
     def solve(self, subs: dict[Basic, usernum], guess: usernum = 1) -> dict[Basic, npfloat]:
-        residual_lambda, residual_free_symbols_list = self.lambda_residual(subs)
+        residual_lambda, residual_free_symbols_list = self.get_lambda_residual(subs)
 
         exception_output = f"\
                 ScalarEquation:\n    {self.__str__().replace('\n', '\n    ')}\n\
@@ -137,17 +159,14 @@ class MatrixEquation(Equation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
         self.residual_type = residual_type
 
-    def copy(self, subs: dict[Basic, usernum] = {}) -> "MatrixEquation":
-        return MatrixEquation(self.lhs.subs(subs), self.rhs.subs(subs))
-
-    def residual(self, subs: dict[Basic, usernum] = {}) -> Matrix:
+    def get_residual(self, subs: dict[Basic, usernum] = {}) -> Matrix:
         if self.residual_type == "differential":
             return sympify(self.lhs.subs(subs)) - sympify(self.rhs.subs(subs))
         else:
             raise ValueError(f"Invalid residual_type = '{self.residual_type}'")
 
-    def lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
-        residual = self.residual(subs)
+    def get_lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
+        residual = self.get_residual(subs)
         residual_free_symbols_list: list[Basic] = list(residual.free_symbols)
         shaped_lambda_residual_func: Callable[[tuple], ndarray] = lambdify(residual_free_symbols_list, residual)
 
@@ -157,7 +176,7 @@ class MatrixEquation(Equation):
         return unpack_ravel_wrapper(shaped_lambda_residual_func), residual_free_symbols_list
 
     def solve(self, subs: dict[Basic, usernum], guess_dict: dict[Basic, usernum] = {}) -> dict[Basic, npfloat]:
-        lambda_residual_func, residual_free_symbols_list = self.lambda_residual(subs)
+        lambda_residual_func, residual_free_symbols_list = self.get_lambda_residual(subs)
 
         exception_output = f"\
                 MatrixEquation:\n    {self.__str__().replace('\n', '\n    ')}\n\
@@ -198,8 +217,8 @@ class System:
         else:
             raise ValueError(f"Equation to be removed is not in System\nEquation: {eqn}")
     
-    def lambda_residual(self, subs: dict[Basic, usernum]) -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
-        lambda_residual_list: list[tuple[Callable[[ndarray], usernum | ndarray], list[Basic]]] = [eqn.lambda_residual(subs) for eqn in self.eqn_list]
+    def get_lambda_residual(self, subs: dict[Basic, usernum]) -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
+        lambda_residual_list: list[tuple[Callable[[ndarray], usernum | ndarray], list[Basic]]] = [eqn.get_lambda_residual(subs) for eqn in self.eqn_list]
         func_list = [lambda_residual[0] for lambda_residual in lambda_residual_list]
         farg_list = [lambda_residual[1] for lambda_residual in lambda_residual_list]
         arg_list: list[Basic] = list(set().union(*[fargs for fargs in farg_list]))
@@ -216,7 +235,7 @@ class System:
         return concatenate_wrapper(func_list, farg_list), arg_list
 
     def solve(self, subs: dict[Basic, usernum], guess_dict: dict[Basic, usernum] = {})-> dict[Basic, npfloat]:
-        lambda_residual_func, residual_free_symbols_list = self.lambda_residual(subs)
+        lambda_residual_func, residual_free_symbols_list = self.get_lambda_residual(subs)
     
         exception_output = f"\
                 System:\n    {self.__str__().replace('\n', '    ')}\n\

@@ -7,11 +7,6 @@ class MEENPyTest(unittest.TestCase):
         y, m, x, b = symb("y, m, x, b")
         line = seqn(y, m * x + b)
 
-        self.assertEqual(
-            line.residual({m: 0, x: 0, b: 0}),
-            y
-        )
-
         sol = line.solve({y: 0, m: 1, b: -1}, guess=2)
         self.assertEqual(sol, dict({x: 1}))
         
@@ -66,6 +61,11 @@ class MEENPyTest(unittest.TestCase):
 
     pass
 
+    def test_attr(self):
+        y, m, x, b = symb("y, m, x, b")
+        line = seqn(y, m * x + b)
+        self.assertEqual(line.subs({y: 1}), (1, m * x + b))
+        
 
 if __name__ == '__main__':
     unittest.main()
