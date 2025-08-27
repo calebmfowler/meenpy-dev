@@ -60,11 +60,6 @@ class MEENPyTest(unittest.TestCase):
         pass
 
     pass
-
-    def test_attr(self):
-        y, m, x, b = symb("y, m, x, b")
-        line = seqn(y, m * x + b)
-        self.assertEqual(line.subs({y: 1}), (1, m * x + b))
         
 
 if __name__ == '__main__':

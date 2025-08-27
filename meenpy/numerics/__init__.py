@@ -1,5 +1,5 @@
 from scipy.optimize import fsolve
-from sympy import sympify, lambdify, Basic, Expr, Matrix
+from sympy import sympify, lambdify, Basic, Expr, Matrix, Identity
 from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum
 from typing import Callable, Any, Self, get_type_hints
 
@@ -26,6 +26,9 @@ class Equation:
     def init_residual_type(self, residual_type):
         self.residual_type = residual_type
 
+    def get_subbed_eqn(self, subs: dict[Basic, usernum] = {}) -> "Equation":
+        return self
+
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr | Matrix:
         return Expr()
     
@@ -34,35 +37,6 @@ class Equation:
     
     def solve(self, subs: dict[Basic, usernum]) -> dict[Basic, npfloat]:
         return {}
-    
-    def __getattr__(self, name) -> Callable | tuple:
-        lhs_attr, rhs_attr = getattr(self.lhs, name), getattr(self.rhs, name)
-            
-        if callable(lhs_attr) and callable(rhs_attr):
-            def method(*args, **kwargs):
-                lhs_val, rhs_val = lhs_attr(*args, **kwargs), rhs_attr(*args, **kwargs)
-
-                if issubclass(type(lhs_val), type(self.lhs)) and issubclass(type(rhs_val),  type(self.rhs)):
-                    return self.__class__(lhs_val, rhs_val)
-                
-                else:
-                    return (lhs_val, rhs_val)
-                
-            return method
-
-        else:
-            return (lhs_attr, rhs_attr)
-
-    def subs(self, *args, **kwargs) -> Self:
-        func = self.__getattr__("subs")
-        if callable(func):
-            return func(*args, **kwargs)
-        else:
-            raise Exception("Error")
-    def diff(self, func, differentiation, **kwargs) -> Self: ...
-    def integrate(self, func, integration, **kwargs) -> Self: ...
-    def evalf(self, n: int = 15, subs: dict[Basic, usernum] = {}, maxn: int = 100, chop: bool = False,\
-            strict: bool = False, quad: str | None = None, verbose: bool = False) -> npfloat: ...
 
     def __str__(self) -> str:
         return self.lhs.__str__() + ' = ' + self.rhs.__str__()
@@ -84,13 +58,18 @@ class ScalarEquation(Equation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
         self.residual_type = residual_type
     
+    def get_subbed_eqn(self, subs: dict[Basic, usernum] = {}) -> "ScalarEquation":
+        return ScalarEquation(self.lhs.subs(subs), self.rhs.subs(subs))
+
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr:
+        subbed_eqn = self.get_subbed_eqn(subs)
+
         if self.residual_type == "differential":
-            return sympify(self.lhs.subs(subs)) - sympify(self.rhs.subs(subs))
+            return sympify(subbed_eqn.lhs) - sympify(subbed_eqn.rhs)
         elif self.residual_type == "left_rational":
-            return sympify(self.lhs.subs(subs)) / sympify(self.rhs.subs(subs)) - 1
+            return sympify(subbed_eqn.lhs) / sympify(subbed_eqn.rhs) - 1
         elif self.residual_type == "right_rational":
-            return sympify(self.rhs.subs(subs)) / sympify(self.lhs.subs(subs)) - 1
+            return sympify(subbed_eqn.rhs) / sympify(subbed_eqn.lhs) - 1
         else:
             raise ValueError(f"Invalid residual_type = '{self.residual_type}'")
     
@@ -159,9 +138,21 @@ class MatrixEquation(Equation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
         self.residual_type = residual_type
 
+    def get_subbed_eqn(self, subs: dict[Basic, usernum] = {}) -> "MatrixEquation":
+        return MatrixEquation(self.lhs.subs(subs), self.rhs.subs(subs))
+
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Matrix:
+        subbed_eqn = self.get_subbed_eqn(subs)
+
         if self.residual_type == "differential":
-            return sympify(self.lhs.subs(subs)) - sympify(self.rhs.subs(subs))
+            return sympify(subbed_eqn.lhs) - sympify(subbed_eqn.rhs)
+        if self.shape[0] == self.shape[1]:
+            if self.residual_type == "left_inversion":
+                return subbed_eqn.lhs**-1 @ subbed_eqn.rhs - Identity(self.shape[0])
+            if self.residual_type == "right_inversion":
+                return subbed_eqn.lhs @ subbed_eqn.rhs**-1 - Identity(self.shape[0])
+        if self.residual_type in ["left_inversion", "right_inversion"]:
+            raise ValueError(f"Invalid residual_type = '{self.residual_type}' for non-square MatrixEquation of shape = {self.shape}")
         else:
             raise ValueError(f"Invalid residual_type = '{self.residual_type}'")
 
@@ -217,6 +208,11 @@ class System:
         else:
             raise ValueError(f"Equation to be removed is not in System\nEquation: {eqn}")
     
+    def get_subbed_sys(self, subs: dict[Basic, usernum] = {}) -> "System":
+        subbed_eqn_list = [eqn.get_subbed_eqn(subs) for eqn in self.eqn_list]
+        
+        return System(subbed_eqn_list)
+
     def get_lambda_residual(self, subs: dict[Basic, usernum]) -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
         lambda_residual_list: list[tuple[Callable[[ndarray], usernum | ndarray], list[Basic]]] = [eqn.get_lambda_residual(subs) for eqn in self.eqn_list]
         func_list = [lambda_residual[0] for lambda_residual in lambda_residual_list]
