@@ -41,6 +41,30 @@ class MEENPyTest(unittest.TestCase):
 
         pass
 
+    def test_square_matrix_equation(self):
+        a1, a2, a3, a4, b1, b2, b3, b4, c1, c2, c3, c4 = symb("a1, a2, a3, a4, b1, b2, b3, b4, c1, c2, c3, c4")
+        A = Mat([
+            [a1, a2],
+            [a3, a4]
+        ])
+        B = Mat([
+            [b1, b2],
+            [b3, b4]
+        ])
+        C = Mat([
+            [c1, c2],
+            [c3, c4]
+        ])
+
+        eqn = meqn(A @ B, C, residual_type="right_inversion")
+
+        sol = eqn.solve({a1: 1, a2: 0, a3: 1, a4: 1, c1: 1, c2: 0, c3: 1, c4: 1})
+        result = [round(sol[free_symbol], 6) for free_symbol in [b1, b2, b3, b4]]
+        expected = [npfloat(1), npfloat(0), npfloat(0), npfloat(1)]
+        self.assertEqual(result, expected)
+
+        pass
+
     def test_mixed_system(self):
         f, f1, f2, f3, m, a1, a2, a3 = symb("f, f1, f2, f3, m, a1, a2, a3")
         F = Mat([f1, f2, f3])

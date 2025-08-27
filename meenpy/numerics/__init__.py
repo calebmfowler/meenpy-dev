@@ -66,10 +66,13 @@ class ScalarEquation(Equation):
 
         if self.residual_type == "differential":
             return sympify(subbed_eqn.lhs) - sympify(subbed_eqn.rhs)
+        
         elif self.residual_type == "left_rational":
             return sympify(subbed_eqn.lhs) / sympify(subbed_eqn.rhs) - 1
+        
         elif self.residual_type == "right_rational":
             return sympify(subbed_eqn.rhs) / sympify(subbed_eqn.lhs) - 1
+        
         else:
             raise ValueError(f"Invalid residual_type = '{self.residual_type}'")
     
@@ -96,6 +99,7 @@ class ScalarEquation(Equation):
         
         try:
             solution = fsolve(residual_lambda, guess)
+        
         except Exception as e:
             raise Exception(f"{e}\nUnable to solve ScalarEquation\n{exception_output}")
 
@@ -132,10 +136,15 @@ class MatrixEquation(Equation):
         self.free_symbols: set[Basic] = self.lhs.free_symbols | self.rhs.free_symbols
 
     def init_residual_type(self, residual_type: str | list[str]):
-        if isinstance(residual_type, str) and residual_type not in ["differential"]:
+        if isinstance(residual_type, str) and residual_type not in ["differential", "left_inversion", "right_inversion"]:
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
+        
+        if isinstance(residual_type, str) and residual_type in ["left_inversion", "right_inversion"] and self.shape[0] != self.shape[1]:
+            raise ValueError(f"Invalid residual_type = '{self.residual_type}' for non-square MatrixEquation of shape = {self.shape}")
+        
         if isinstance(residual_type, list) and any([subtype not in [] for subtype in residual_type]):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
+        
         self.residual_type = residual_type
 
     def get_subbed_eqn(self, subs: dict[Basic, usernum] = {}) -> "MatrixEquation":
@@ -146,13 +155,13 @@ class MatrixEquation(Equation):
 
         if self.residual_type == "differential":
             return sympify(subbed_eqn.lhs) - sympify(subbed_eqn.rhs)
-        if self.shape[0] == self.shape[1]:
-            if self.residual_type == "left_inversion":
-                return subbed_eqn.lhs**-1 @ subbed_eqn.rhs - Identity(self.shape[0])
-            if self.residual_type == "right_inversion":
-                return subbed_eqn.lhs @ subbed_eqn.rhs**-1 - Identity(self.shape[0])
-        if self.residual_type in ["left_inversion", "right_inversion"]:
-            raise ValueError(f"Invalid residual_type = '{self.residual_type}' for non-square MatrixEquation of shape = {self.shape}")
+        
+        if self.residual_type == "left_inversion":
+            return subbed_eqn.lhs**-1 @ subbed_eqn.rhs - Identity(self.shape[0])
+        
+        if self.residual_type == "right_inversion":
+            return subbed_eqn.lhs @ subbed_eqn.rhs**-1 - Identity(self.shape[0])
+                 
         else:
             raise ValueError(f"Invalid residual_type = '{self.residual_type}'")
 
@@ -181,6 +190,7 @@ class MatrixEquation(Equation):
         
         try:
             solution = nparr(fsolve(lambda_residual_func, guess_vect), dtype=npfloat)
+
         except Exception as e:
             raise Exception(f"{e}\nUnable to solve MatrixEquation\n{exception_output}")
 
@@ -199,18 +209,20 @@ class System:
     def add_eqn(self, eqn: Equation) -> None:
         if eqn not in self.eqn_list:
             self.eqn_list.append(eqn)
+
         else:
             raise ValueError(f"Equation to be added is already in the System\nEquation: {eqn}")
 
     def remove_eqn(self, eqn: Equation) -> None:
         if eqn in self.eqn_list:
             self.eqn_list.remove(eqn)
+
         else:
             raise ValueError(f"Equation to be removed is not in System\nEquation: {eqn}")
     
     def get_subbed_sys(self, subs: dict[Basic, usernum] = {}) -> "System":
         subbed_eqn_list = [eqn.get_subbed_eqn(subs) for eqn in self.eqn_list]
-        
+
         return System(subbed_eqn_list)
 
     def get_lambda_residual(self, subs: dict[Basic, usernum]) -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
