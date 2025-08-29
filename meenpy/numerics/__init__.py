@@ -1,7 +1,8 @@
 from scipy.optimize import fsolve
 from sympy import sympify, lambdify, Basic, Expr, Matrix, Identity
 from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum
-from typing import Callable, Any, Self, get_type_hints
+from typing import Callable, get_type_hints
+from pandas import DataFrame
 
 usernum = int | float | npfloat
 
@@ -40,6 +41,7 @@ class Equation:
 
     def __str__(self) -> str:
         return self.lhs.__str__() + ' = ' + self.rhs.__str__()
+
 
 class ScalarEquation(Equation):
     def init_lhs_rhs(self, lhs, rhs) -> None:
@@ -195,6 +197,14 @@ class MatrixEquation(Equation):
             raise Exception(f"{e}\nUnable to solve MatrixEquation\n{exception_output}")
 
         return dict(zip(residual_free_symbols_list, solution))
+
+
+class Table:
+    def __init__(self, df: DataFrame):
+        self.df = df        
+
+    def __str__(self):
+        return self.df.__str__()
 
 
 class System:

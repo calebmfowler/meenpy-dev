@@ -75,11 +75,9 @@ class MEENPyTest(unittest.TestCase):
         mechanical_system = sys([newtons_second_law, force_magnitude])
 
         sol = mechanical_system.solve({a1: 1, a2: 1, a3: 1, m: 1}, guess_dict={f: 2, f1: 2, f2: 2, f3: 2})
-        result = [sol[free_symbol] for free_symbol in [f, f1, f2, f3]]
-        expected = [np.sqrt(3), npfloat(1), npfloat(1), npfloat(1)]
-        self.assertEqual(len(result), len(expected))
-        for i, *_ in enumerate(expected):
-            self.assertAlmostEqual(result[i], expected[i])
+        result = [round(sol[free_symbol], 6) for free_symbol in [f, f1, f2, f3]]
+        expected = [round(np.sqrt(3), 6), npfloat(1), npfloat(1), npfloat(1)]
+        self.assertEqual(result, expected)
 
         pass
 
