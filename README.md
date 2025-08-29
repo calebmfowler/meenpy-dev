@@ -11,7 +11,7 @@ This library contains a few classes enabling succinct articulation and starage o
     cd meenpy-dev
 ```
 
-`meenpy` uses the package manager `uv` which stores the python enviroment setup. In order to run the testing suite, for example you would enter.
+`meenpy` uses the package manager `uv` which stores the python enviroment setup. A call to `uv` is used then to run any code, for example, to run the testing suite, you would enter the following.
 
 ```
     uv run test.py
