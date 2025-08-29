@@ -22,3 +22,9 @@ Likewise, in order to use `meenpy` you simply need to make run a `*.py` file whi
 ```
     uv run my_project.py
 ```
+
+Assmuing you have `vscode` installed, you can open the the project folder and use the source control tab to interact with the repository.
+
+```
+    code . # while working directory is meenpy-dev (. is the working directory)
+```
