@@ -1,6 +1,6 @@
 # Welcome to `meenpy`!
 
-This library contains a few classes enabling succinct articulation and starage of equations, efficient assembly of systems of those equations, and powerful solving capabilities for those assembled systems. The current best examples of use are found in `test.py`, in particular `test_mized_system`.
+This library contains a few classes enabling succinct articulation and starage of equations, efficient assembly of systems of those equations, and powerful solving capabilities for those assembled systems. The current best examples of use are found in `test.py`, in particular `test_mixed_system`.
 
 ## Installation and Usage Instructions
 
