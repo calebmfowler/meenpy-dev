@@ -2,7 +2,7 @@ from scipy.optimize import fsolve
 from sympy import sympify, lambdify, Basic, Expr, Matrix, Identity
 from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum
 from typing import Callable, get_type_hints
-from pandas import DataFrame
+from pandas import Series, DataFrame, concat
 
 usernum = int | float | npfloat
 
@@ -27,7 +27,7 @@ class Equation:
     def init_residual_type(self, residual_type):
         self.residual_type = residual_type
 
-    def get_subbed_eqn(self, subs: dict[Basic, usernum] = {}) -> "Equation":
+    def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "Equation":
         return self
 
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr | Matrix:
@@ -60,11 +60,11 @@ class ScalarEquation(Equation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
         self.residual_type = residual_type
     
-    def get_subbed_eqn(self, subs: dict[Basic, usernum] = {}) -> "ScalarEquation":
+    def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "ScalarEquation":
         return ScalarEquation(self.lhs.subs(subs), self.rhs.subs(subs))
 
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr:
-        subbed_eqn = self.get_subbed_eqn(subs)
+        subbed_eqn = self.get_subbed(subs)
 
         if self.residual_type == "differential":
             return sympify(subbed_eqn.lhs) - sympify(subbed_eqn.rhs)
@@ -149,11 +149,11 @@ class MatrixEquation(Equation):
         
         self.residual_type = residual_type
 
-    def get_subbed_eqn(self, subs: dict[Basic, usernum] = {}) -> "MatrixEquation":
+    def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "MatrixEquation":
         return MatrixEquation(self.lhs.subs(subs), self.rhs.subs(subs))
 
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Matrix:
-        subbed_eqn = self.get_subbed_eqn(subs)
+        subbed_eqn = self.get_subbed(subs)
 
         if self.residual_type == "differential":
             return sympify(subbed_eqn.lhs) - sympify(subbed_eqn.rhs)
@@ -200,8 +200,84 @@ class MatrixEquation(Equation):
 
 
 class Table:
-    def __init__(self, df: DataFrame):
-        self.df = df        
+    def __init__(self, df: DataFrame, indexing_columns: list[str] = [], preformatted: bool = False) -> None:
+        if preformatted:
+            self.df = df
+            self.len_multiindex = df.index.nlevels
+        
+        else:
+            self.df = df.set_index(indexing_columns)
+            self.len_multiindex = len(indexing_columns)
+        
+        self.multiindex_adjacency = DataFrame(
+            [[self.is_adjacent_multiindex(I, J) for J in self.df.index] for I in self.df.index],
+            index=self.df.index,
+            columns=self.df.index
+        )
+
+    def is_adjacent_multiindex(self, I: tuple, J: tuple) -> int:
+        index_inequality = [1 if i != j else 0 for i, j in zip(I, J)]
+        num_unequal = sum(index_inequality)
+
+        if num_unequal == 1:
+            return index_inequality.index(1)
+        else:
+            return -1
+    
+    def get_multiindex_interpolation(self, adj_index: int, A: tuple, B: tuple, col: str, val: usernum) -> Series:
+        val_A, val_B = self.df.at[A, col], self.df.at[B, col]
+        row_A, row_B = self.df.loc[A], self.df.loc[B]
+        x = (val - val_A) / (val_B - val_A)
+
+        I = A[:adj_index] + (A[adj_index] * (1 - x) + B[adj_index] * (x),) + A[adj_index + 1:]
+        row_I: Series = row_A * (1 - x) + row_B * (x)
+        row_I.name = I
+        return row_I
+
+    def get_subbed(self, subs: dict[str, usernum] = {}) -> "Table":
+        subbed_df = self.df
+
+        for col, val in zip(subs.keys(), subs.values()):
+            is_proper_column = col in subbed_df.columns
+            is_index_column = col in subbed_df.index.names
+
+            if not is_proper_column and not is_index_column:
+                raise ValueError(f"Given column {col} is not a proper column or an index column in Table\n{self.__str__()}")
+            
+            elif is_proper_column:
+                equal_df = subbed_df[subbed_df[col] == val]
+
+                interpolation_multiindex_adjacency = self.multiindex_adjacency.loc[
+                    subbed_df[subbed_df[col] < val].index.values,
+                    subbed_df[subbed_df[col] > val].index.values
+                ].stack(list(range(self.len_multiindex)), future_stack=True)
+
+            else:
+                equal_df = subbed_df[subbed_df.index.get_level_values(col) == val]
+
+                interpolation_multiindex_adjacency = self.multiindex_adjacency.loc[
+                    subbed_df[subbed_df.index.get_level_values(col) < val].index.values,
+                    subbed_df[subbed_df.index.get_level_values(col) > val].index.values
+                ].stack(list(range(self.len_multiindex)), future_stack=True)
+
+            interpolation_df = DataFrame([
+                self.get_multiindex_interpolation(adj_index, AB[:self.len_multiindex], AB[self.len_multiindex:], col, val)
+                for AB, adj_index in zip(
+                    interpolation_multiindex_adjacency.index.values,
+                    interpolation_multiindex_adjacency.values
+                )
+                if adj_index != -1
+            ])
+            
+            if not interpolation_df.empty:
+                interpolation_df.index.names = subbed_df.index.names
+
+            subbed_df = concat([equal_df, interpolation_df])
+
+        return Table(subbed_df, preformatted=True)
+
+    def __getitem__(self, *args, **kwargs):
+        return self.df.__getitem__(*args, **kwargs)
 
     def __str__(self):
         return self.df.__str__()
@@ -231,7 +307,7 @@ class System:
             raise ValueError(f"Equation to be removed is not in System\nEquation: {eqn}")
     
     def get_subbed_sys(self, subs: dict[Basic, usernum] = {}) -> "System":
-        subbed_eqn_list = [eqn.get_subbed_eqn(subs) for eqn in self.eqn_list]
+        subbed_eqn_list = [eqn.get_subbed(subs) for eqn in self.eqn_list]
 
         return System(subbed_eqn_list)
 
