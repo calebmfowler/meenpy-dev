@@ -203,11 +203,10 @@ class Table:
     def __init__(self, df: DataFrame, indexing_columns: list[str] = [], preformatted: bool = False) -> None:
         if preformatted:
             self.df = df
-            self.len_multiindex = df.index.nlevels
-        
         else:
             self.df = df.set_index(indexing_columns)
-            self.len_multiindex = len(indexing_columns)
+        
+        self.len_multiindex = self.df.index.nlevels
         
         self.multiindex_adjacency = DataFrame(
             [[self.is_adjacent_multiindex(I, J) for J in self.df.index] for I in self.df.index],
@@ -224,15 +223,19 @@ class Table:
         else:
             return -1
     
-    def get_multiindex_interpolation(self, adj_index: int, A: tuple, B: tuple, col: str, val: usernum) -> Series:
-        val_A, val_B = self.df.at[A, col], self.df.at[B, col]
+    def get_multiindex_interpolation(self, adj_index: int, A: tuple, B: tuple, col: str, val: usernum, is_proper_column: bool) -> Series:
+        if is_proper_column:
+            val_A, val_B = self.df.at[A, col], self.df.at[B, col]
+        else:
+            val_A, val_B = A[self.df.index.names.index(col)], B[self.df.index.names.index(col)]
+
         row_A, row_B = self.df.loc[A], self.df.loc[B]
         x = (val - val_A) / (val_B - val_A)
 
         I = A[:adj_index] + (A[adj_index] * (1 - x) + B[adj_index] * (x),) + A[adj_index + 1:]
         row_I: Series = row_A * (1 - x) + row_B * (x)
         row_I.name = I
-        return row_I
+        return row_I    
 
     def get_subbed(self, subs: dict[str, usernum] = {}) -> "Table":
         subbed_df = self.df
@@ -261,14 +264,14 @@ class Table:
                 ].stack(list(range(self.len_multiindex)), future_stack=True)
 
             interpolation_df = DataFrame([
-                self.get_multiindex_interpolation(adj_index, AB[:self.len_multiindex], AB[self.len_multiindex:], col, val)
+                self.get_multiindex_interpolation(adj_index, AB[:self.len_multiindex], AB[self.len_multiindex:], col, val, is_proper_column)
                 for AB, adj_index in zip(
                     interpolation_multiindex_adjacency.index.values,
                     interpolation_multiindex_adjacency.values
                 )
                 if adj_index != -1
             ])
-            
+
             if not interpolation_df.empty:
                 interpolation_df.index.names = subbed_df.index.names
 

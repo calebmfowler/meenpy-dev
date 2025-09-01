@@ -84,7 +84,7 @@ class MEENPyTest(unittest.TestCase):
     def test_two_index_table(self):
         boiling_table = Tab(read_csv("testing/boiling.csv"), ["Temperature", "Quality"])
         boiling_table.get_subbed({"Pressure": 1, "Specific Volume": 1.75})
-        boiling_table.get_subbed({"Temperature": 100})
+        boiling_table.get_subbed({"Temperature": 125})
         pass
 
     pass
