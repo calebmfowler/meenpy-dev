@@ -223,19 +223,26 @@ class Table:
         else:
             return -1
     
-    def get_multiindex_interpolation(self, adj_index: int, A: tuple, B: tuple, col: str, val: usernum, is_proper_column: bool) -> Series:
+    def _get_interpolated_row(self, adj_index: int, A: tuple, B: tuple, x) -> Series:
+        I = A[:adj_index] + (A[adj_index] * (1 - x) + B[adj_index] * (x),) + A[adj_index + 1:]
+
+        row_A, row_B = self.df.loc[A], self.df.loc[B]
+        row_I: Series = row_A * (1 - x) + row_B * (x)
+
+        row_I.name = I
+
+        return row_I
+
+    def _get_interpolated_row_for_substitution(self, adj_index: int, A: tuple, B: tuple, col: str, val: usernum, is_proper_column: bool) -> Series:
         if is_proper_column:
             val_A, val_B = self.df.at[A, col], self.df.at[B, col]
         else:
             val_A, val_B = A[self.df.index.names.index(col)], B[self.df.index.names.index(col)]
 
         row_A, row_B = self.df.loc[A], self.df.loc[B]
-        x = (val - val_A) / (val_B - val_A)
+        x: float = (val - val_A) / (val_B - val_A)
 
-        I = A[:adj_index] + (A[adj_index] * (1 - x) + B[adj_index] * (x),) + A[adj_index + 1:]
-        row_I: Series = row_A * (1 - x) + row_B * (x)
-        row_I.name = I
-        return row_I    
+        return self._get_interpolated_row(adj_index, A, B, x)
 
     def get_subbed(self, subs: dict[str, usernum] = {}) -> "Table":
         subbed_df = self.df
@@ -247,35 +254,36 @@ class Table:
             if not is_proper_column and not is_index_column:
                 raise ValueError(f"Given column {col} is not a proper column or an index column in Table\n{self.__str__()}")
             
-            elif is_proper_column:
+            if is_proper_column:
                 equal_df = subbed_df[subbed_df[col] == val]
 
-                interpolation_multiindex_adjacency = self.multiindex_adjacency.loc[
-                    subbed_df[subbed_df[col] < val].index.values,
-                    subbed_df[subbed_df[col] > val].index.values
-                ].stack(list(range(self.len_multiindex)), future_stack=True)
+                lesser_index_candidates = subbed_df[subbed_df[col] < val].index.values
+                greater_index_candidates = subbed_df[subbed_df[col] > val].index.values
 
             else:
                 equal_df = subbed_df[subbed_df.index.get_level_values(col) == val]
+                
+                lesser_index_candidates = subbed_df[subbed_df.index.get_level_values(col) < val].index.values
+                greater_index_candidates = subbed_df[subbed_df.index.get_level_values(col) > val].index.values
 
-                interpolation_multiindex_adjacency = self.multiindex_adjacency.loc[
-                    subbed_df[subbed_df.index.get_level_values(col) < val].index.values,
-                    subbed_df[subbed_df.index.get_level_values(col) > val].index.values
-                ].stack(list(range(self.len_multiindex)), future_stack=True)
+            interpolation_candidates_multiindex_adjacency = self.multiindex_adjacency.loc[
+                lesser_index_candidates,
+                greater_index_candidates
+            ].stack(list(range(self.len_multiindex)), future_stack=True)
 
-            interpolation_df = DataFrame([
-                self.get_multiindex_interpolation(adj_index, AB[:self.len_multiindex], AB[self.len_multiindex:], col, val, is_proper_column)
+            interpolated_df = DataFrame([
+                self._get_interpolated_row_for_substitution(adj_index, AB[:self.len_multiindex], AB[self.len_multiindex:], col, val, is_proper_column)
                 for AB, adj_index in zip(
-                    interpolation_multiindex_adjacency.index.values,
-                    interpolation_multiindex_adjacency.values
+                    interpolation_candidates_multiindex_adjacency.index.values,
+                    interpolation_candidates_multiindex_adjacency.values
                 )
                 if adj_index != -1
             ])
 
-            if not interpolation_df.empty:
-                interpolation_df.index.names = subbed_df.index.names
+            if not interpolated_df.empty:
+                interpolated_df.index.names = subbed_df.index.names
 
-            subbed_df = concat([equal_df, interpolation_df])
+            subbed_df = concat([equal_df, interpolated_df])
 
         return Table(subbed_df, preformatted=True)
 
