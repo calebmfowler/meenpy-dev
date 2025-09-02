@@ -7,6 +7,19 @@ from pandas import Series, DataFrame, concat
 usernum = int | float | npfloat
 
 class Equation:
+    def __init__(self):
+        self.size = -1
+
+    def get_subbed(self, subs: dict = {}) -> "Equation":
+        return self
+    
+    def get_lambda_residual(self, subs: dict = {}) -> tuple[Callable, list[Basic]]:
+        return (lambda *args, **kwargs: None, [])
+    
+    def solve(self, subs: dict[Basic, usernum]) -> dict[Basic, npfloat]:
+        return {}
+
+class ExpressionEquation(Equation):
     def __init__(self, lhs, rhs, residual_type = "differential") -> None:
         self.init_lhs_rhs(lhs, rhs)
         self.init_shape_size()
@@ -27,7 +40,7 @@ class Equation:
     def init_residual_type(self, residual_type):
         self.residual_type = residual_type
 
-    def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "Equation":
+    def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "ExpressionEquation":
         return self
 
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr | Matrix:
@@ -43,7 +56,7 @@ class Equation:
         return self.lhs.__str__() + ' = ' + self.rhs.__str__()
 
 
-class ScalarEquation(Equation):
+class ScalarEquation(ExpressionEquation):
     def init_lhs_rhs(self, lhs, rhs) -> None:
         self.lhs: Expr = sympify(lhs)
         self.rhs: Expr = sympify(rhs)
@@ -108,7 +121,7 @@ class ScalarEquation(Equation):
         return {residual_free_symbols_list[0] : npfloat(solution[0])}
 
 
-class MatrixEquation(Equation):
+class MatrixEquation(ExpressionEquation):
     def init_lhs_rhs(self, lhs, rhs) -> None:
         self.lhs: Matrix = sympify(lhs)
         self.rhs: Matrix = sympify(rhs)
@@ -199,7 +212,7 @@ class MatrixEquation(Equation):
         return dict(zip(residual_free_symbols_list, solution))
 
 
-class Table:
+class Table(Equation):
     def __init__(self, df: DataFrame, indexing_columns: list[str] = [], preformatted: bool = False) -> None:
         if preformatted:
             self.df = df
@@ -209,12 +222,12 @@ class Table:
         self.len_multiindex = self.df.index.nlevels
         
         self.multiindex_adjacency = DataFrame(
-            [[self.is_adjacent_multiindex(I, J) for J in self.df.index] for I in self.df.index],
+            [[self._is_adjacent_multiindex(I, J) for J in self.df.index] for I in self.df.index],
             index=self.df.index,
             columns=self.df.index
         )
 
-    def is_adjacent_multiindex(self, I: tuple, J: tuple) -> int:
+    def _is_adjacent_multiindex(self, I: tuple, J: tuple) -> int:
         index_inequality = [1 if i != j else 0 for i, j in zip(I, J)]
         num_unequal = sum(index_inequality)
 
@@ -297,27 +310,12 @@ class Table:
 class System:
     def __init__(self, eqn_list: list[Equation]) -> None:
         self.eqn_list = eqn_list
-        self.free_symbols = set().union(*[eqn.free_symbols for eqn in self.eqn_list])
         self.size = sum([eqn.size for eqn in self.eqn_list])
     
     def __str__(self) -> str:
         return "| " + "\n| ".join([eqn.__str__().replace('\n', '\n| ') for eqn in self.eqn_list])
-    
-    def add_eqn(self, eqn: Equation) -> None:
-        if eqn not in self.eqn_list:
-            self.eqn_list.append(eqn)
-
-        else:
-            raise ValueError(f"Equation to be added is already in the System\nEquation: {eqn}")
-
-    def remove_eqn(self, eqn: Equation) -> None:
-        if eqn in self.eqn_list:
-            self.eqn_list.remove(eqn)
-
-        else:
-            raise ValueError(f"Equation to be removed is not in System\nEquation: {eqn}")
-    
-    def get_subbed_sys(self, subs: dict[Basic, usernum] = {}) -> "System":
+        
+    def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "System":
         subbed_eqn_list = [eqn.get_subbed(subs) for eqn in self.eqn_list]
 
         return System(subbed_eqn_list)
