@@ -1,6 +1,6 @@
 from scipy.optimize import fsolve
 from sympy import sympify, lambdify, Basic, Expr, Matrix, Identity
-from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum
+from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum, min, argmin
 from typing import Callable, get_type_hints
 from pandas import Series, DataFrame, concat
 
@@ -10,16 +10,17 @@ class Equation:
     def __init__(self):
         self.size = -1
 
-    def get_subbed(self, subs: dict = {}) -> "Equation":
+    def get_subbed(self, subs: dict) -> "Equation":
         return self
     
-    def get_lambda_residual(self, subs: dict = {}) -> tuple[Callable, list[Basic]]:
+    def get_lambda_residual(self, subs: dict = {}) -> tuple[Callable, list]:
         return (lambda *args, **kwargs: None, [])
     
-    def solve(self, subs: dict[Basic, usernum]) -> dict[Basic, npfloat]:
+    def solve(self, subs: dict = {}) -> dict:
         return {}
 
-class ExpressionEquation(Equation):
+
+class AlgebraicEquation(Equation):
     def __init__(self, lhs, rhs, residual_type = "differential") -> None:
         self.init_lhs_rhs(lhs, rhs)
         self.init_shape_size()
@@ -40,7 +41,7 @@ class ExpressionEquation(Equation):
     def init_residual_type(self, residual_type):
         self.residual_type = residual_type
 
-    def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "ExpressionEquation":
+    def get_subbed(self, subs: dict[Basic, usernum]) -> "AlgebraicEquation":
         return self
 
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr | Matrix:
@@ -49,14 +50,14 @@ class ExpressionEquation(Equation):
     def get_lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable, list[Basic]]:
         return (lambda *args, **kwargs: None, [])
     
-    def solve(self, subs: dict[Basic, usernum]) -> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum] = {}) -> dict[Basic, npfloat]:
         return {}
 
     def __str__(self) -> str:
         return self.lhs.__str__() + ' = ' + self.rhs.__str__()
 
 
-class ScalarEquation(ExpressionEquation):
+class ScalarEquation(AlgebraicEquation):
     def init_lhs_rhs(self, lhs, rhs) -> None:
         self.lhs: Expr = sympify(lhs)
         self.rhs: Expr = sympify(rhs)
@@ -73,7 +74,7 @@ class ScalarEquation(ExpressionEquation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
         self.residual_type = residual_type
     
-    def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "ScalarEquation":
+    def get_subbed(self, subs: dict[Basic, usernum]) -> "ScalarEquation":
         return ScalarEquation(self.lhs.subs(subs), self.rhs.subs(subs))
 
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr:
@@ -101,7 +102,7 @@ class ScalarEquation(ExpressionEquation):
 
         return unpack_wrapper(lambda_residual_func), residual_free_symbols_list
         
-    def solve(self, subs: dict[Basic, usernum], guess: usernum = 1) -> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum] = {}, guess: usernum = 1) -> dict[Basic, npfloat]:
         residual_lambda, residual_free_symbols_list = self.get_lambda_residual(subs)
 
         exception_output = f"\
@@ -121,7 +122,7 @@ class ScalarEquation(ExpressionEquation):
         return {residual_free_symbols_list[0] : npfloat(solution[0])}
 
 
-class MatrixEquation(ExpressionEquation):
+class MatrixEquation(AlgebraicEquation):
     def init_lhs_rhs(self, lhs, rhs) -> None:
         self.lhs: Matrix = sympify(lhs)
         self.rhs: Matrix = sympify(rhs)
@@ -162,7 +163,7 @@ class MatrixEquation(ExpressionEquation):
         
         self.residual_type = residual_type
 
-    def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "MatrixEquation":
+    def get_subbed(self, subs: dict[Basic, usernum]) -> "MatrixEquation":
         return MatrixEquation(self.lhs.subs(subs), self.rhs.subs(subs))
 
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Matrix:
@@ -190,7 +191,7 @@ class MatrixEquation(ExpressionEquation):
 
         return unpack_ravel_wrapper(shaped_lambda_residual_func), residual_free_symbols_list
 
-    def solve(self, subs: dict[Basic, usernum], guess_dict: dict[Basic, usernum] = {}) -> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum] = {}, guess_dict: dict[Basic, usernum] = {}) -> dict[Basic, npfloat]:
         lambda_residual_func, residual_free_symbols_list = self.get_lambda_residual(subs)
 
         exception_output = f"\
@@ -212,7 +213,7 @@ class MatrixEquation(ExpressionEquation):
         return dict(zip(residual_free_symbols_list, solution))
 
 
-class Table(Equation):
+class TabularEquation(Equation):
     def __init__(self, df: DataFrame, indexing_columns: list[str] = [], preformatted: bool = False) -> None:
         if preformatted:
             self.df = df
@@ -220,44 +221,46 @@ class Table(Equation):
             self.df = df.set_index(indexing_columns)
         
         self.len_multiindex = self.df.index.nlevels
+
+        self.at = self.df.at
+        self.columns = self.df.columns
+        self.index = self.df.index
+        self.iloc = self.df.iloc
+        self.loc = self.df.loc
         
         self.multiindex_adjacency = DataFrame(
-            [[self._is_adjacent_multiindex(I, J) for J in self.df.index] for I in self.df.index],
+            [[self._how_is_multiindex_adjacent(I, J)[0] for J in self.df.index] for I in self.df.index],
             index=self.df.index,
             columns=self.df.index
         )
-
-    def _is_adjacent_multiindex(self, I: tuple, J: tuple) -> int:
+    
+    def _how_is_multiindex_adjacent(self, I: tuple, J: tuple) -> tuple[int, bool]:
         index_inequality = [1 if i != j else 0 for i, j in zip(I, J)]
         num_unequal = sum(index_inequality)
-
+        
         if num_unequal == 1:
-            return index_inequality.index(1)
+            index = index_inequality.index(1)
+            return (index, I[index] > J[index])
+
         else:
-            return -1
+            return (-1, False)
     
-    def _get_interpolated_row(self, adj_index: int, A: tuple, B: tuple, x) -> Series:
-        I = A[:adj_index] + (A[adj_index] * (1 - x) + B[adj_index] * (x),) + A[adj_index + 1:]
-
-        row_A, row_B = self.df.loc[A], self.df.loc[B]
-        row_I: Series = row_A * (1 - x) + row_B * (x)
-
-        row_I.name = I
-
-        return row_I
-
     def _get_interpolated_row_for_substitution(self, adj_index: int, A: tuple, B: tuple, col: str, val: usernum, is_proper_column: bool) -> Series:
         if is_proper_column:
-            val_A, val_B = self.df.at[A, col], self.df.at[B, col]
+            val_A, val_B = self.at[A, col], self.at[B, col]
         else:
-            val_A, val_B = A[self.df.index.names.index(col)], B[self.df.index.names.index(col)]
+            val_A, val_B = A[adj_index], B[adj_index]
 
-        row_A, row_B = self.df.loc[A], self.df.loc[B]
-        x: float = (val - val_A) / (val_B - val_A)
+        row_A, row_B = self.loc[A], self.loc[B]
+        x = (val - val_A) / (val_B - val_A)
 
-        return self._get_interpolated_row(adj_index, A, B, x)
+        N = A[:adj_index] + (A[adj_index] * (1 - x) + B[adj_index] * (x),) + A[adj_index + 1:]
+        row_N: Series = row_A * (1 - x) + row_B * (x)
+        row_N.name = N
 
-    def get_subbed(self, subs: dict[str, usernum] = {}) -> "Table":
+        return row_N
+
+    def get_subbed(self, subs: dict[str, usernum]) -> "TabularEquation":
         subbed_df = self.df
 
         for col, val in zip(subs.keys(), subs.values()):
@@ -270,18 +273,18 @@ class Table(Equation):
             if is_proper_column:
                 equal_df = subbed_df[subbed_df[col] == val]
 
-                lesser_index_candidates = subbed_df[subbed_df[col] < val].index.values
-                greater_index_candidates = subbed_df[subbed_df[col] > val].index.values
+                lesser_index_candidates = subbed_df[subbed_df[col] < val]
+                greater_index_candidates = subbed_df[subbed_df[col] > val]
 
             else:
                 equal_df = subbed_df[subbed_df.index.get_level_values(col) == val]
                 
-                lesser_index_candidates = subbed_df[subbed_df.index.get_level_values(col) < val].index.values
-                greater_index_candidates = subbed_df[subbed_df.index.get_level_values(col) > val].index.values
+                lesser_index_candidates = subbed_df[subbed_df.index.get_level_values(col) < val]
+                greater_index_candidates = subbed_df[subbed_df.index.get_level_values(col) > val]
 
             interpolation_candidates_multiindex_adjacency = self.multiindex_adjacency.loc[
-                lesser_index_candidates,
-                greater_index_candidates
+                lesser_index_candidates.index.values,
+                greater_index_candidates.index.values
             ].stack(list(range(self.len_multiindex)), future_stack=True)
 
             interpolated_df = DataFrame([
@@ -298,7 +301,71 @@ class Table(Equation):
 
             subbed_df = concat([equal_df, interpolated_df])
 
-        return Table(subbed_df, preformatted=True)
+        return TabularEquation(subbed_df, preformatted=True)
+
+    def _get_multiindex_seperation(self, N: tuple, I: tuple) -> npfloat:
+        return sum([n - i for n, i in zip(N, I)])
+
+    def _get_interpolated_row_for_lambda_residual(self, adj_index: int, A: tuple, N: tuple, B: tuple) -> Series:
+        val_A, val_N, val_B = A[adj_index], N[adj_index], B[adj_index]
+        x = (val_N - val_A) / (val_B - val_A)
+        row_A, row_B = self.loc[A], self.loc[B]
+        row_N: Series = row_A * (1 - x) + row_B * (x)
+        row_N.name = N
+
+        return row_N
+
+    def get_lambda_residual(self, subs: dict[str, usernum] = {}) -> tuple[Callable[[ndarray], ndarray], list[str]]:
+        subbed_table = self.get_subbed(subs)
+
+        def lambda_residual(vals: ndarray) -> ndarray:
+            N = tuple(vals[:subbed_table.len_multiindex])
+            col_vals_N = vals[subbed_table.len_multiindex:]
+            row_N = Series(dict(zip(subbed_table.columns, col_vals_N)), name=N)
+
+            if N in subbed_table.index:
+                return nparr(row_N - subbed_table.loc[N])
+            
+            novel_multiindex_adjacency = [subbed_table._how_is_multiindex_adjacent(I, N) for I in subbed_table.index]
+
+            lesser_index_candidates = Series({
+                I: adj_index
+                for I, (adj_index, is_greater) in zip(subbed_table.index, novel_multiindex_adjacency)
+                if adj_index != -1 and not is_greater
+            })
+
+            greater_index_candidates = Series({
+                I: adj_index
+                for I, (adj_index, is_greater) in zip(subbed_table.index, novel_multiindex_adjacency)
+                if adj_index != -1 and is_greater
+            })
+
+            interpolation_candidates_multiindex_adjacency = subbed_table.multiindex_adjacency.loc[
+                lesser_index_candidates.index.values,
+                greater_index_candidates.index.values
+            ].stack(list(range(subbed_table.len_multiindex)), future_stack=True)
+
+            interpolated_df = DataFrame([
+                subbed_table._get_interpolated_row_for_lambda_residual(adj_index, AB[:subbed_table.len_multiindex], N, AB[subbed_table.len_multiindex:])
+                for AB, adj_index in zip(
+                    interpolation_candidates_multiindex_adjacency.index.values,
+                    interpolation_candidates_multiindex_adjacency.values
+                )
+                if adj_index != -1
+            ])
+            interpolated_df.index.names = subbed_table.index.names
+
+            if not interpolated_df.empty:
+                return nparr(row_N - interpolated_df.iloc[0])
+
+            multiindex_seperation = [subbed_table._get_multiindex_seperation(N, I) for I in subbed_table.index]
+            i_nearest_multiindex = argmin(multiindex_seperation)
+            nearest_multiindex: tuple = subbed_table.index.values[i_nearest_multiindex]
+            nearest_multiindex_seperation: npfloat = multiindex_seperation[i_nearest_multiindex]
+
+            return lambda_residual(nparr(list(nearest_multiindex) + col_vals_N.tolist())) * 1e3 * nearest_multiindex_seperation**2
+
+        return lambda_residual, [str(name) for name in subbed_table.index.names] + subbed_table.columns.to_list()
 
     def __getitem__(self, *args, **kwargs):
         return self.df.__getitem__(*args, **kwargs)

@@ -1,5 +1,5 @@
 import unittest
-from meenpy.numerics import ScalarEquation as seqn, MatrixEquation as meqn, System as sys, Table as Tab
+from meenpy.numerics import ScalarEquation as seqn, MatrixEquation as meqn, System as sys, TabularEquation as Tab
 from meenpy.numerics.utils import *
 
 class MEENPyTest(unittest.TestCase):
@@ -85,6 +85,9 @@ class MEENPyTest(unittest.TestCase):
         boiling_table = Tab(read_csv("testing/boiling.csv"), ["Temperature", "Quality"])
         boiling_table.get_subbed({"Pressure": 1, "Specific Volume": 1.75})
         boiling_table.get_subbed({"Temperature": 125})
+        func, arg_labels = boiling_table.get_lambda_residual({"Pressure": 1})
+        func(nparr([125, 1, 1, 1.75]))
+
         pass
 
     pass
